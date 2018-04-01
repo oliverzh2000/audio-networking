@@ -1,7 +1,5 @@
 import java.util.ArrayList;
-import java.util.LinkedList;
 import java.util.List;
-import java.util.Random;
 
 /**
  * Coordinates the sending and receiving of frames between Connections.
@@ -14,7 +12,10 @@ import java.util.Random;
 public class ConnectionManager {
     private FrameIO frameIO;
     private List<Connection> liveConnections = new ArrayList<>();
-    private List<Connection> pendingConnections = new LinkedList<>();
+
+    // retransmission TimerTasks need to return if currently busy sending,
+    // otherwise risk buildup of frames.
+    private volatile boolean isSending = false;
 
     private Thread receiver = new Thread(() -> {
         while (true) {
@@ -30,11 +31,11 @@ public class ConnectionManager {
         while (true) {
             for (Connection connection : liveConnections) {
                 connection.send();
-                try {
-                    Thread.sleep(50);
-                } catch (InterruptedException e) {
-                    return;
-                }
+            }
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                return;
             }
         }
     });
@@ -53,37 +54,46 @@ public class ConnectionManager {
 
         ConnectionManager cm = new ConnectionManager(frameIO);
 
-        Connection connectionServer = new Connection(cm, (short) 0, (short) 1, "SERVER");
-        cm.liveConnections.add(connectionServer);
-
-//        connectionServer.addToSendQueue("server 1".getBytes());
-//        connectionServer.addToSendQueue("server 2".getBytes());
-//        connectionServer.addToSendQueue("server 3".getBytes());
-//        connectionServer.addToSendQueue("server 4".getBytes());
+//        Connection connectionServer = new Connection(cm, (byte) 0, (byte) 1, "SERVER");
+//        cm.liveConnections.add(connectionServer);
 //
-        Connection connectionClient = new Connection(cm, (short) 1, (short) 0, "CLIENT");
-        cm.liveConnections.add(connectionClient);
-//        connectionClient.addToSendQueue("client 5".getBytes());
-//        connectionClient.addToSendQueue("client 6".getBytes());
-//        connectionClient.addToSendQueue("client 7".getBytes());
-//        connectionClient.addToSendQueue("client 8".getBytes());
+////        connectionServer.addToSendQueue("server 1".getBytes());
+////        connectionServer.addToSendQueue("server 2".getBytes());
+////        connectionServer.addToSendQueue("server 3".getBytes());
+////        connectionServer.addToSendQueue("server 4".getBytes());
+////
+//        Connection connectionClient = new Connection(cm, (byte) 1, (byte) 0, "CLIENT");
+//        cm.liveConnections.add(connectionClient);
+////        connectionClient.addToSendQueue("client 5".getBytes());
+////        connectionClient.addToSendQueue("client 6".getBytes());
+////        connectionClient.addToSendQueue("client 7".getBytes());
+////        connectionClient.addToSendQueue("client 8".getBytes());
+////        cm.startParallelIO();
+////
+//
 //        cm.startParallelIO();
 //
+//        Random random = new Random();
+//        byte[] data = new byte[20000];
+//        random.nextBytes(data);
+//
+//        connectionServer.addToSendQueue(data);
+//
+////        while (true) {
+////            Scanner scanner = new Scanner(System.in);
+////            String nextLine = scanner.nextLine();
+////            connectionServer.addToSendQueue(nextLine.getBytes());
+//////            connectionClient.addToSendQueue(nextLine.getBytes());
+////        }
 
+        Connection c1 = new Connection(cm, (byte) 0, (byte) 1, "CLIENT");
+        c1.addSynToSendQueue();
+        c1.addToSendQueue(new byte[]{1, 2, 3});
+        c1.addToSendQueue(new byte[]{1, 2, 3, 4});
         cm.startParallelIO();
 
-        Random random = new Random();
-        byte[] data = new byte[20000];
-        random.nextBytes(data);
+        cm.liveConnections.add(c1);
 
-        connectionServer.addToSendQueue(data);
-
-//        while (true) {
-//            Scanner scanner = new Scanner(System.in);
-//            String nextLine = scanner.nextLine();
-//            connectionServer.addToSendQueue(nextLine.getBytes());
-////            connectionClient.addToSendQueue(nextLine.getBytes());
-//        }
     }
 
     /**
@@ -92,31 +102,35 @@ public class ConnectionManager {
      * Blocks until the next frame is received.
      */
     public void receive() {
-        Frame incomingFrame = frameIO.decode();
-        // check for newly granted connections.
-        if (incomingFrame.syn && incomingFrame.ack) {
-            for (Connection pendingConnection : pendingConnections) {
-                if (pendingConnection.sourcePort == incomingFrame.destPort &&
-                        pendingConnection.destPort == incomingFrame.sourcePort) {
-                    pendingConnections.remove(pendingConnection);
-                    liveConnections.add(pendingConnection);
+        Frame inboundFrame = frameIO.decode();
+
+        if (inboundFrame.protocol == Frame.PROTOCOL_CONNECTION) {
+            // check for connection requests
+            if (inboundFrame.syn && !inboundFrame.ack) {
+                Connection connection = new Connection(this, inboundFrame.destPort, inboundFrame.sourcePort);
+                liveConnections.add(connection);
+                connection.receive(inboundFrame);
+            } else if (inboundFrame.fin && inboundFrame.ack) {
+                // TODO: Fix logic for fin.
+                for (Connection connection : liveConnections) {
+                    if (connection.sourcePort == inboundFrame.destPort &&
+                            connection.destPort == inboundFrame.sourcePort) {
+                        connection.receive(inboundFrame);
+                        liveConnections.remove(connection);
+                    }
                 }
             }
-        }
-        // check for connection requests
-        else if (incomingFrame.syn) {
-            Connection connection = new Connection(this, incomingFrame.destPort, incomingFrame.sourcePort);
-            liveConnections.add(connection);
-            connection.receive(incomingFrame);
-        }
-        // redirect remaining incoming frames to their respective live connections
-        else {
-            for (Connection connection : liveConnections) {
-                if (connection.sourcePort == incomingFrame.destPort &&
-                        connection.destPort == incomingFrame.sourcePort) {
-                    connection.receive(incomingFrame);
+            // redirect remaining incoming frames to their respective live connections
+            else {
+                for (Connection connection : liveConnections) {
+                    if (connection.sourcePort == inboundFrame.destPort &&
+                            connection.destPort == inboundFrame.sourcePort) {
+                        connection.receive(inboundFrame);
+                    }
                 }
             }
+        } else if (inboundFrame.protocol == Frame.PROTOCOL_PING) {
+            // simulates the echo reply
         }
     }
 
@@ -128,9 +142,15 @@ public class ConnectionManager {
      * @param frame the frame to send
      */
     public synchronized void send(Frame frame) {
+        isSending = true;
         RealTimeAudioIO.getInstance().startOutput();
         frameIO.encode(frame);
         RealTimeAudioIO.getInstance().stopOutput();
+        isSending = false;
+    }
+
+    public boolean isSending() {
+        return isSending;
     }
 
     /**
@@ -139,5 +159,13 @@ public class ConnectionManager {
     public void startParallelIO() {
         receiver.start();
         sender.start();
+    }
+
+    public void add(Connection connection) {
+        liveConnections.add(connection);
+    }
+
+    public void remove(Connection connection) {
+        liveConnections.remove(connection);
     }
 }

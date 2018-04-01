@@ -20,7 +20,7 @@ public class FrameIOSim implements FrameIO {
     public static void main(String[] args) {
         FrameIOSim frameIO = new FrameIOSim();
 
-        Frame testFrame = new Frame((short) 0, (short) 1, false, false, false, false, new byte[]{0});
+        Frame testFrame = new Frame((byte) 0, (byte) 1, (byte) 0, false, false, false, (byte) 0, new byte[]{0});
 
         (new Thread(new Runnable() {
             @Override
@@ -34,7 +34,7 @@ public class FrameIOSim implements FrameIO {
         while (true) {
             Scanner scanner = new Scanner(System.in);
             String message = scanner.nextLine();
-            frameIO.encode(new Frame((short) 0, (short) 1, false, false, false, false, message.getBytes()));
+            frameIO.encode(new Frame((byte) 0, (byte) 1, (byte) 0, false, false, false, (byte) 0, message.getBytes()));
             System.out.println(frameIO.inBuffer.size());
         }
     }

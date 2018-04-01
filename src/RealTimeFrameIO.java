@@ -7,10 +7,9 @@ import java.util.Arrays;
 class RealTimeFrameIO implements FrameIO {
     private static final byte[] PREAMBLE =
             ByteBuffer.allocate(8).putLong(0b01010101_01010101_01010101_01010101_01010101_01010101_01010101_11010101L).array();
-    private static final int SEQ_MASK = 0b00000001;
-    private static final int SYN_MASK = 0b00000010;
-    private static final int ACK_MASK = 0b00000100;
-    private static final int FIN_MASK = 0b00001000;
+    private static final int SYN_MASK = 0b00000001;
+    private static final int ACK_MASK = 0b00000010;
+    private static final int FIN_MASK = 0b00000100;
 
     private static final int maxFrameLength = 32767;  // max value of short
 
@@ -59,37 +58,46 @@ class RealTimeFrameIO implements FrameIO {
     @Override
     public void encode(Frame frame) {
         // Frame format:
-        //                 | Header                  Flags *1 byte*                   |
-        // preamble  + SoF | SourceAddr | DestAddr | seq,syn,ack,fin pad | pay length | head chk | payload | pay chk | end |
-        // 8               | 2          | 2        | 1b  1b  1b  1b  pad | 2          | 4        | n       | 4       | 1   |
+        //                 | Header                      | Flags *1 byte*  |                                  | payload optional  |
+        // preamble  + SoF | sourcePort | destPort | seq | syn,ack,fin pad | protocol | pay length | head chk | payload | pay chk | end |
+        // 8               | 1          | 1        | 1   | 1b  1b  1b  pad | 1        | 2          | 4        | n       | 4       | 2   |
         if (frame.payload.length > maxFrameLength) {
             throw new IllegalArgumentException("Frame size exceeds " + maxFrameLength + " bytes");
         }
         lineCodec.encodeBytes(PREAMBLE);
-        ByteBuffer header = ByteBuffer.allocate(2 + 2 + 1 + 2);
-        header.putShort(frame.sourcePort);
-        header.putShort(frame.destPort);
+        ByteBuffer header = ByteBuffer.allocate(1 + 1 + 1 + 1 + 1 + 2);
+        header.put(frame.sourcePort);
+        header.put(frame.destPort);
+        header.put(frame.seq);
+
         byte flags = 0;
-        if (frame.seq) flags |= SEQ_MASK;
         if (frame.syn) flags |= SYN_MASK;
         if (frame.ack) flags |= ACK_MASK;
         if (frame.fin) flags |= FIN_MASK;
+
         header.put(flags);
+        header.put(frame.protocol);
         header.putShort((short) frame.payload.length);
 
-        ByteBuffer frameBytes = ByteBuffer.allocate(header.capacity() + 4 + frame.payload.length + 4 + 1);
         int headerChecksum = Arrays.hashCode(header.array());
         int payloadChecksum = Arrays.hashCode(frame.payload);
         header.flip();
 
+        ByteBuffer frameBytes;
+        if (frame.payload.length > 0) {
+            // checksum hashes are 4 bytes long.
+            frameBytes = ByteBuffer.allocate(header.capacity() + 4 + frame.payload.length + 4);
+        } else {
+            frameBytes = ByteBuffer.allocate(header.capacity() + 4);
+        }
         frameBytes.put(header);
         frameBytes.putInt(headerChecksum);
-        frameBytes.put(frame.payload);
-        frameBytes.putInt(payloadChecksum);
-        frameBytes.put((byte) 0);
-
+        if (frame.payload.length > 0) {
+            frameBytes.put(frame.payload);
+            frameBytes.putInt(payloadChecksum);
+        }
         lineCodec.encodeBytes(frameBytes.array());
-        lineCodec.encodeBytes(new byte[]{0, 0, 0});
+        lineCodec.encodeBytes(new byte[]{0, 0});
         for (int i = 0; i < 256; i++) {
             audioIO.writeSample((byte) 0);
         }
@@ -98,9 +106,9 @@ class RealTimeFrameIO implements FrameIO {
     @Override
     public Frame decode() {
         // Frame format:
-        //                 | Header                  Flags *1 byte*                   |
-        // preamble  + SoF | SourceAddr | DestAddr | seq,syn,ack,fin pad | pay length | head chk | payload | pay chk | end |
-        // 8               | 2          | 2        | 1b  1b  1b  1b  pad | 2          | 4        | n       | 4       | 1   |
+        //                 | Header                      | Flags *1 byte*  |                                  | payload optional  |
+        // preamble  + SoF | sourcePort | destPort | seq | syn,ack,fin pad | protocol | pay length | head chk | payload | pay chk | end |
+        // 8               | 1          | 1        | 1   | 1b  1b  1b  pad | 1        | 2          | 4        | n       | 4       | 2   |
         start:
         while (true) {
             int preambleBitsLeft = 32;
@@ -125,15 +133,16 @@ class RealTimeFrameIO implements FrameIO {
             }
 //            System.out.println("SOF found");
 
-            ByteBuffer header = ByteBuffer.wrap(lineCodec.decodeBytes(2 + 2 + 1 + 2));
+            ByteBuffer header = ByteBuffer.wrap(lineCodec.decodeBytes(1 + 1 + 1 + 1 + 1 + 2));
 //        System.out.println(Arrays.toString(header.array()));
-            short sourcePort = header.getShort();
-            short destPort = header.getShort();
+            byte sourcePort = header.get();
+            byte destPort = header.get();
+            byte seq = header.get();
             byte flags = header.get();
-            boolean seq = (flags & SEQ_MASK) != 0;
             boolean syn = (flags & SYN_MASK) != 0;
             boolean ack = (flags & ACK_MASK) != 0;
             boolean fin = (flags & FIN_MASK) != 0;
+            byte protocol = header.get();
             short payloadLength = header.getShort();
 
             int headerChecksum = ByteBuffer.wrap(lineCodec.decodeBytes(4)).getInt();
@@ -141,13 +150,17 @@ class RealTimeFrameIO implements FrameIO {
                 System.out.println("invalid header checksum");
                 continue;
             }
-            byte[] payload = lineCodec.decodeBytes(payloadLength);
-            int payloadChecksum = ByteBuffer.wrap(lineCodec.decodeBytes(4)).getInt();
-            if (Arrays.hashCode(payload) != payloadChecksum) {
-                System.out.println("invalid payload checksum");
-                continue;
+            if (payloadLength > 0) {
+                byte[] payload = lineCodec.decodeBytes(payloadLength);
+                int payloadChecksum = ByteBuffer.wrap(lineCodec.decodeBytes(4)).getInt();
+                if (Arrays.hashCode(payload) != payloadChecksum) {
+                    System.out.println("invalid payload checksum");
+                    continue;
+                }
+                return new Frame(sourcePort, destPort, seq, syn, ack, fin, protocol, payload);
+            } else {
+                return new Frame(sourcePort, destPort, seq, syn, ack, fin, protocol);
             }
-            return new Frame(sourcePort, destPort, seq, syn, ack, fin, payload);
         }
     }
 }
