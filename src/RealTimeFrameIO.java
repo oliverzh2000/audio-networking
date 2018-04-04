@@ -10,6 +10,8 @@ class RealTimeFrameIO implements FrameIO {
     private static final int SYN_MASK = 0b00000001;
     private static final int ACK_MASK = 0b00000010;
     private static final int FIN_MASK = 0b00000100;
+    private static final int BEG_MASK = 0b00010000;
+    private static final int END_MASK = 0b00100000;
 
     private static final int maxFrameLength = 32767;  // max value of short
 
@@ -58,22 +60,26 @@ class RealTimeFrameIO implements FrameIO {
     @Override
     public void encode(Frame frame) {
         // Frame format:
-        //                 | Header                      | Flags *1 byte*  |                                  | payload optional  |
-        // preamble  + SoF | sourcePort | destPort | seq | syn,ack,fin pad | protocol | pay length | head chk | payload | pay chk | end |
-        // 8               | 1          | 1        | 1   | 1b  1b  1b  pad | 1        | 2          | 4        | n       | 4       | 2   |
+        //                 | Header              | Flags *1 byte*      |                                  | payload optional        |
+        // preamble  + SoF | source | dest | seq | syn,ack,fin,beg pad | protocol | pay length | head chk | payload | pay chk | end |
+        // 8               | 2      | 2    | 1   | 1b  1b  1b  1b  pad | 1        | 2          | 4        | n       | 4       | 2   |
         if (frame.payload.length > maxFrameLength) {
             throw new IllegalArgumentException("Frame size exceeds " + maxFrameLength + " bytes");
         }
         lineCodec.encodeBytes(PREAMBLE);
-        ByteBuffer header = ByteBuffer.allocate(1 + 1 + 1 + 1 + 1 + 2);
-        header.put(frame.sourcePort);
-        header.put(frame.destPort);
+        ByteBuffer header = ByteBuffer.allocate(2 + 2 + 1 + 1 + 1 + 2);
+        header.put(frame.source.host);
+        header.put(frame.source.port);
+        header.put(frame.dest.host);
+        header.put(frame.dest.port);
         header.put(frame.seq);
 
         byte flags = 0;
         if (frame.syn) flags |= SYN_MASK;
         if (frame.ack) flags |= ACK_MASK;
         if (frame.fin) flags |= FIN_MASK;
+        if (frame.beg) flags |= BEG_MASK;
+        if (frame.end) flags |= END_MASK;
 
         header.put(flags);
         header.put(frame.protocol);
@@ -106,9 +112,9 @@ class RealTimeFrameIO implements FrameIO {
     @Override
     public Frame decode() {
         // Frame format:
-        //                 | Header                      | Flags *1 byte*  |                                  | payload optional  |
-        // preamble  + SoF | sourcePort | destPort | seq | syn,ack,fin pad | protocol | pay length | head chk | payload | pay chk | end |
-        // 8               | 1          | 1        | 1   | 1b  1b  1b  pad | 1        | 2          | 4        | n       | 4       | 2   |
+        //                 | Header              | Flags *1 byte*      |                                  | payload optional        |
+        // preamble  + SoF | source | dest | seq | syn,ack,fin,beg pad | protocol | pay length | head chk | payload | pay chk | end |
+        // 8               | 2      | 2    | 1   | 1b  1b  1b  1b  pad | 1        | 2          | 4        | n       | 4       | 2   |
         start:
         while (true) {
             int preambleBitsLeft = 32;
@@ -133,15 +139,17 @@ class RealTimeFrameIO implements FrameIO {
             }
 //            System.out.println("SOF found");
 
-            ByteBuffer header = ByteBuffer.wrap(lineCodec.decodeBytes(1 + 1 + 1 + 1 + 1 + 2));
+            ByteBuffer header = ByteBuffer.wrap(lineCodec.decodeBytes(2 + 2 + 1 + 1 + 1 + 2));
 //        System.out.println(Arrays.toString(header.array()));
-            byte sourcePort = header.get();
-            byte destPort = header.get();
+            Address source = new Address(header.get(), header.get());
+            Address dest = new Address(header.get(), header.get());
             byte seq = header.get();
             byte flags = header.get();
             boolean syn = (flags & SYN_MASK) != 0;
             boolean ack = (flags & ACK_MASK) != 0;
             boolean fin = (flags & FIN_MASK) != 0;
+            boolean beg = (flags & BEG_MASK) != 0;
+            boolean end = (flags & END_MASK) != 0;
             byte protocol = header.get();
             short payloadLength = header.getShort();
 
@@ -157,9 +165,9 @@ class RealTimeFrameIO implements FrameIO {
                     System.out.println("invalid payload checksum");
                     continue;
                 }
-                return new Frame(sourcePort, destPort, seq, syn, ack, fin, protocol, payload);
+                return new Frame(source, dest, seq, syn, ack, fin, beg, end, protocol, payload);
             } else {
-                return new Frame(sourcePort, destPort, seq, syn, ack, fin, protocol);
+                return new Frame(source, dest, seq, syn, ack, fin, beg, end, protocol);
             }
         }
     }

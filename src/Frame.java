@@ -4,47 +4,90 @@
 public class Frame {
     public static final byte PROTOCOL_CONNECTION = 0;
     public static final byte PROTOCOL_PING = 1;
-    byte sourcePort;
+    Address source;
+    Address dest;
+    byte seq;
     boolean syn;
     boolean ack;
     boolean fin;
-    byte destPort;
-    byte[] payload;
-    byte seq;
+    boolean beg;
+    boolean end;
     byte protocol;
+    byte[] payload;
 
-    public Frame(byte sourcePort, byte destPort, byte seq, boolean syn, boolean ack, boolean fin, byte protocol, byte[] payload) {
-        this.sourcePort = sourcePort;
-        this.destPort = destPort;
+    public Frame(Address source, Address dest, byte seq,
+                 boolean syn, boolean ack, boolean fin, boolean beg, boolean end, byte protocol, byte[] payload) {
+        this.source = source;
+        this.dest = dest;
         this.seq = seq;
         this.ack = ack;
         this.syn = syn;
         this.fin = fin;
+        this.beg = beg;
+        this.end = end;
         this.protocol = protocol;
         this.payload = payload;
     }
 
-    public Frame(byte sourcePort, byte destPort, byte seq, boolean syn, boolean ack, boolean fin, byte protocol) {
-        this.sourcePort = sourcePort;
-        this.destPort = destPort;
-        this.seq = seq;
-        this.ack = ack;
-        this.syn = syn;
-        this.fin = fin;
-        this.protocol = protocol;
-        this.payload = new byte[]{};
+    public Frame(Address source, Address dest, byte seq,
+                 boolean syn, boolean ack, boolean fin, boolean beg, boolean end, byte protocol) {
+        this(source, dest, seq, syn, ack, fin, beg, end, protocol, new byte[]{});
     }
 
     @Override
     public String toString() {
-        String header = "source:" + sourcePort + "  dest:" + destPort + "  seq:" + seq + "  flags:";
-        for (boolean flag : new boolean[]{syn, ack, fin}) {
-            if (flag) {
-                header += "1";
-            } else {
-                header += "0";
-            }
+        String header = "source=" + source + "  dest=" + dest + "  seq=" + seq + "  flags=";
+        if (ack) {
+            header += "|ACK|";
+        } else {
+            header += "|   |";
+        }
+        if (syn) {
+            header += "SYN|";
+        } else {
+            header += "   |";
+        }
+        if (fin) {
+            header += "FIN|";
+        } else {
+            header += "   |";
+        }
+        if (beg) {
+            header += "BEG|";
+        } else {
+            header += "   |";
+        }
+        if (end) {
+            header += "END|";
+        } else {
+            header += "   |";
         }
         return header + "  payload: " + payload.length + " bytes";
     }
 }
+
+class Address {
+    byte host;
+    byte port;
+
+    public Address(int host, int port) {
+        this.host = (byte) host;
+        this.port = (byte) port;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        if (other == null) return false;
+        if (other == this) return true;
+        if (!(other instanceof Address)) return false;
+        Address otherAddress = (Address) other;
+        return host == otherAddress.host && port == otherAddress.port;
+    }
+
+    @Override
+    public String toString() {
+        return host + "." + port;
+    }
+}
+
+
