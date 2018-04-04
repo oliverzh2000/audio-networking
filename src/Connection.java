@@ -28,14 +28,14 @@ public class Connection {
 
     public Connection(ConnectionHost connectionHost, byte port, Address dest, String name) {
         this.connectionHost = connectionHost;
-        this.source = new Address(connectionHost.localHostID, port);
+        this.source = new Address(connectionHost.localHost, port);
         this.dest = dest;
         this.name = name;
     }
 
     public Connection(ConnectionHost connectionHost, byte port, Address destAddress) {
         this(connectionHost, port, destAddress,
-                (new Address(connectionHost.localHostID, port)).toString());
+                (new Address(connectionHost.localHost, port)).toString());
     }
 
     /**
@@ -179,6 +179,8 @@ public class Connection {
                         System.arraycopy(frame.payload, 0, message, from, frame.payload.length);
                         from += frame.payload.length;
                     }
+                    inMessages.add(message);
+                    inFrames.clear();
                 }
             }
             System.out.printf("%-45s", System.currentTimeMillis() + " " + name + " received: ");

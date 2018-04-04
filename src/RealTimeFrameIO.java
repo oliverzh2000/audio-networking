@@ -155,14 +155,14 @@ class RealTimeFrameIO implements FrameIO {
 
             int headerChecksum = ByteBuffer.wrap(lineCodec.decodeBytes(4)).getInt();
             if (Arrays.hashCode(header.array()) != headerChecksum) {
-                System.out.println("invalid header checksum");
+                System.out.println("INVALID header checksum");
                 continue;
             }
             if (payloadLength > 0) {
                 byte[] payload = lineCodec.decodeBytes(payloadLength);
                 int payloadChecksum = ByteBuffer.wrap(lineCodec.decodeBytes(4)).getInt();
                 if (Arrays.hashCode(payload) != payloadChecksum) {
-                    System.out.println("invalid payload checksum");
+                    System.out.println("INVALID payload checksum");
                     continue;
                 }
                 return new Frame(source, dest, seq, syn, ack, fin, beg, end, protocol, payload);

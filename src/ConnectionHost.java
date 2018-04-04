@@ -1,5 +1,8 @@
 import java.nio.ByteBuffer;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Random;
 
 /**
  * Coordinates the sending and receiving of frames between Connections - acts as a host for Connections.
@@ -14,7 +17,7 @@ import java.util.*;
  * @author Oliver on 3/11/2018
  */
 public class ConnectionHost {
-    final byte localHostID;
+    final byte localHost;
     private FrameIO frameIO;
     private List<Connection> connections = new ArrayList<>();
     private List<Ping> pings = new ArrayList<>();
@@ -46,8 +49,8 @@ public class ConnectionHost {
         }
     });
 
-    public ConnectionHost(byte localHostID, FrameIO frameIO) {
-        this.localHostID = localHostID;
+    public ConnectionHost(byte localHost, FrameIO frameIO) {
+        this.localHost = localHost;
         this.frameIO = frameIO;
     }
 
@@ -97,8 +100,7 @@ public class ConnectionHost {
         cm.startParallelIO();
 
         cm.connections.add(c1);
-        while (!cm.ping((byte) 55, 5, 100, 500));
-
+        while (!cm.ping((byte) 55, 5, 100, 500)) ;
         Random random = new Random();
         byte[] data = new byte[300];
         random.nextBytes(data);
@@ -106,7 +108,11 @@ public class ConnectionHost {
         c1.addSynToSendQueue();
         c1.addMessageToSendQueue(data);
         c1.addMessageToSendQueue(data);
-        c1.addFinToSendQueue();
+//        c1.addFinToSendQueue();
+
+        Thread.sleep(4000);
+
+        System.out.println();
     }
 
     /**
@@ -116,7 +122,7 @@ public class ConnectionHost {
      */
     public void receive() {
         Frame inFrame = frameIO.decode();
-        if (inFrame.dest.host != localHostID) {
+        if (inFrame.dest.host != localHost) {
             return;
         }
         if (inFrame.protocol == Frame.PROTOCOL_CONNECTION) {
@@ -177,9 +183,24 @@ public class ConnectionHost {
      * Used by child connections to send frames.
      * Blocks until the entire frame has been written.
      *
+     * If the frame is a {@code PROTOCOL_CONNECTION} it's source address must be that of an active connection.
+     * If the frame is a {@code PROTOCOL_PING} it's source address host must be equal to {@code localHost}.
+     *
      * @param frame the frame to send
+     * @throws IllegalArgumentException if the frame's source address is invalid.
      */
-    public synchronized void send(Frame frame) {
+    public synchronized void send(Frame frame) throws IllegalArgumentException {
+        if (frame.protocol == Frame.PROTOCOL_CONNECTION) {
+            List<Address> activeAddresses = new LinkedList<>();
+            for (Connection connection : connections) {
+                activeAddresses.add(connection.source);
+            }
+            if (!activeAddresses.contains(frame.source)) {
+                throw new IllegalArgumentException("Source address of PROTOCOL_CONNECTION frame is not from an active connection");
+            }
+        } else if (frame.protocol == Frame.PROTOCOL_PING && frame.source.host != localHost) {
+            throw new IllegalArgumentException("Source address host of PROTOCOL_PING frame is not equal to localHost");
+        }
         isSending = true;
         RealTimeAudioIO.getInstance().startOutput();
         frameIO.encode(frame);
@@ -188,26 +209,9 @@ public class ConnectionHost {
     }
 
     public boolean ping(byte targetHost, int nFrames, long frameDelay, long timeout) {
-        Ping ping = new Ping(targetHost, nFrames, frameDelay, timeout);
+        Ping ping = new Ping(targetHost);
         pings.add(ping);
-        ping.sendEchoRequests();
-        boolean successful = false;
-        while (pings.contains(ping)) {
-            if (ping.isSuccessful()) {
-                successful = true;
-            }
-            try {
-                Thread.sleep(frameDelay);
-            } catch (InterruptedException e) {
-                return false;
-            }
-        }
-        System.out.println("PING success: " + successful + "\n");
-        return successful;
-    }
-
-    public void pingTimeout(Ping ping) {
-        pings.remove(ping);
+        return (ping.sendEchoRequests(nFrames, frameDelay, timeout));
     }
 
     public boolean isSending() {
@@ -222,63 +226,81 @@ public class ConnectionHost {
         sender.start();
     }
 
+    /**
+     * Adds the given connection to the list of connections the host will serve.
+     * This is the only way for a connection to send/receive frames.
+     * @param connection the connection to add
+     */
     public void add(Connection connection) {
         connections.add(connection);
     }
 
+    /**
+     * Remove the given connection from the list of connections the host will serve.
+     * The given connection will no longer be able to send and receive frames.
+     * @param connection the connection to remove
+     */
     public void remove(Connection connection) {
         connections.remove(connection);
     }
 
     class Ping {
         byte targetHost;
-        int nFrames;
-        long timeout;
-        long frameDelay;
-        List<Frame> inFrames = new LinkedList<>();
+        int repliesReceived;
 
-        public Ping(byte targetHost, int nFrames, long frameDelay, long timeout) {
+        public Ping(byte targetHost) {
             this.targetHost = targetHost;
-            this.nFrames = nFrames;
-            this.frameDelay = frameDelay;
-            this.timeout = timeout;
         }
 
-        public void sendEchoRequests() {
+        /**
+         * Sends an ping/'echo-request' frame {@code nFrames} times, with {@code frameDelay} milliseconds separation.
+         * Waits {@code timeout} milliseconds after the last ping has been sent to decide if the ping
+         * has passed or failed.
+         *
+         * Pass: at least one 'echo-reply' was received within {@code timeout} milliseconds since the last
+         * frame was sent.
+         *
+         * Also prints statistics about the round trip time and percent loss.
+         *
+         * @return {@code true} if the ping passed. {@code false} otherwise.
+         */
+        public boolean sendEchoRequests(int nFrames, long frameDelay, long timeout) {
             System.out.printf("PING target host: %d, sending %d data bytes in %d frames\n", targetHost, 8 * nFrames, nFrames);
-            for (byte seq = 0; seq < nFrames; seq++) {
-                // sending timestamp allows stateless computation of round trip time
-                byte[] time = ByteBuffer.allocate(8).putLong(System.currentTimeMillis()).array();
-                Frame echoRequest = new Frame(new Address(localHostID, 0), new Address(targetHost, 0),
-                        seq, false, false, false, false, false, Frame.PROTOCOL_PING, time);
-                send(echoRequest);
-                try {
+            try {
+                for (byte seq = 0; seq < nFrames; seq++) {
+                    // sending timestamp allows stateless computation of round trip time
+                    byte[] time = ByteBuffer.allocate(8).putLong(System.currentTimeMillis()).array();
+                    Frame echoRequest = new Frame(new Address(localHost, 0), new Address(targetHost, 0),
+                            seq, false, false, false, false, false, Frame.PROTOCOL_PING, time);
+                    send(echoRequest);
                     Thread.sleep(frameDelay);
-                } catch (InterruptedException e) {
-                    return;
                 }
-            }
 
-            new Timer().schedule(new TimerTask() {
-                @Override
-                public void run() {
-                    System.out.printf("--- target host: %d PING statistics ---\n", targetHost);
-                    System.out.printf("%d frames sent, %d frames received, %.2f%% frame loss\n",
-                            nFrames, inFrames.size(), 100.0 * (nFrames - inFrames.size()) / nFrames);
-                    pingTimeout(Ping.this);
-                }
-            }, timeout);
+                Thread.sleep(timeout);
+                double percentageLoss = 100.0 * (nFrames - repliesReceived) / nFrames;
+                System.out.printf("--- target host: %d PING statistics ---\n", targetHost);
+                System.out.printf("%d frames sent, %d frames received, %.2f%% frame loss\n",
+                        nFrames, repliesReceived, percentageLoss);
+                pings.remove(this);
+                System.out.println(repliesReceived > 0 ? "PING passed" : "PING failed");
+                System.out.println();
+                return repliesReceived > 0;
+            } catch (InterruptedException e) {
+                return false;
+            }
         }
 
+        /**
+         * Receives the given 'echo-reply' from the connectionHost, and saves it to the internal buffer.
+         * This method should only be called from the connectionHost.
+         *
+         * @param echoReply the frame received from the connectionHost.
+         */
         public void receive(Frame echoReply) {
-            inFrames.add(echoReply);
+            repliesReceived++;
             long roundTripTime = System.currentTimeMillis() - ByteBuffer.wrap(echoReply.payload).getLong();
             System.out.printf("received %d bytes PING from host %d seq=%d time=%dms\n",
                     echoReply.payload.length, echoReply.source.host, echoReply.seq, roundTripTime);
-        }
-
-        public boolean isSuccessful() {
-            return inFrames.size() > 0;
         }
     }
 }
