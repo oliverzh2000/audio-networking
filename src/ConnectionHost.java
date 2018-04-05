@@ -1,8 +1,5 @@
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
 
 /**
  * Coordinates the sending and receiving of frames between Connections - acts as a host for Connections.
@@ -65,7 +62,7 @@ public class ConnectionHost {
         ConnectionHost cm = new ConnectionHost((byte) 55, frameIO);
 
 //        Connection connectionServer = new Connection(cm, (byte) 0, (byte) 1, "SERVER");
-//        cm.connections.add(connectionServer);
+//        cm.connections.addConnection(connectionServer);
 //
 ////        connectionServer.addMessageToSendQueue("server 1".getBytes());
 ////        connectionServer.addMessageToSendQueue("server 2".getBytes());
@@ -73,7 +70,7 @@ public class ConnectionHost {
 ////        connectionServer.addMessageToSendQueue("server 4".getBytes());
 ////
 //        Connection connectionClient = new Connection(cm, (byte) 1, (byte) 0, "CLIENT");
-//        cm.connections.add(connectionClient);
+//        cm.connections.addConnection(connectionClient);
 ////        connectionClient.addMessageToSendQueue("client 5".getBytes());
 ////        connectionClient.addMessageToSendQueue("client 6".getBytes());
 ////        connectionClient.addMessageToSendQueue("client 7".getBytes());
@@ -96,23 +93,32 @@ public class ConnectionHost {
 //////            connectionClient.addMessageToSendQueue(nextLine.getBytes());
 ////        }
         // TODO FIX host id/port id address
-        Connection c1 = new Connection(cm, (byte) 55, new Address(55, 97), "CLIENT");
+        Connection client = new Connection(cm, (byte) 10, new Address(55, 20), "Client");
+        Connection c2 = new Connection(cm, (byte) 20, new Address(55, 10), "c2");
         cm.startParallelIO();
 
-        cm.connections.add(c1);
-        while (!cm.ping((byte) 55, 5, 100, 500)) ;
+        cm.addConnection(client);
+        cm.addConnection(c2);
+//        while (!cm.ping((byte) 55, 5, 100, 500)) ;
         Random random = new Random();
-        byte[] data = new byte[300];
+        byte[] data = new byte[30];
         random.nextBytes(data);
 
-        c1.addSynToSendQueue();
-        c1.addMessageToSendQueue(data);
-        c1.addMessageToSendQueue(data);
-//        c1.addFinToSendQueue();
+//        client.addSynToSendQueue();
+        client.addMessageToSendQueue(data);
+        client.addMessageToSendQueue(data);
+        client.addMessageToSendQueue(data);
+        client.addMessageToSendQueue(data);
+        client.addFinToSendQueue();
 
         Thread.sleep(4000);
 
-        System.out.println();
+        System.out.println(Arrays.toString(c2.getMessage()));
+        System.out.println(Arrays.toString(c2.getMessage()));
+        System.out.println(Arrays.toString(c2.getMessage()));
+        System.out.println(Arrays.toString(c2.getMessage()));
+
+//        System.out.println();
     }
 
     /**
@@ -127,12 +133,9 @@ public class ConnectionHost {
         }
         if (inFrame.protocol == Frame.PROTOCOL_CONNECTION) {
             // check for connection requests
-            if (inFrame.syn && !inFrame.ack) {
-                Connection connection = new Connection(this, inFrame.dest.port, inFrame.source);
-                if (!connections.contains(connection)) {
-                    connections.add(connection);
-                    connection.receive(inFrame);
-                }
+            if (inFrame.syn && !inFrame.ack &&
+                    !connections.contains(new Connection(this, inFrame.dest.port, inFrame.source))) {
+                connections.add(new Connection(this, inFrame.dest.port, inFrame.source));
             } else if (inFrame.fin) {
                 // TODO: Fix logic for fin.
                 Connection finConnection = null;
@@ -229,18 +232,18 @@ public class ConnectionHost {
     /**
      * Adds the given connection to the list of connections the host will serve.
      * This is the only way for a connection to send/receive frames.
-     * @param connection the connection to add
+     * @param connection the connection to addConnection
      */
-    public void add(Connection connection) {
+    public void addConnection(Connection connection) {
         connections.add(connection);
     }
 
     /**
      * Remove the given connection from the list of connections the host will serve.
      * The given connection will no longer be able to send and receive frames.
-     * @param connection the connection to remove
+     * @param connection the connection to removeConnection
      */
-    public void remove(Connection connection) {
+    public void removeConnection(Connection connection) {
         connections.remove(connection);
     }
 

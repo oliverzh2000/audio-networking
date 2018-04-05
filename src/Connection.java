@@ -1,4 +1,8 @@
-import java.util.*;
+import java.util.Arrays;
+import java.util.LinkedList;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.concurrent.LinkedBlockingQueue;
 
 /**
  * Implements a reliable and message-oriented duplex communication channel
@@ -19,8 +23,8 @@ public class Connection {
     private volatile byte receiveSeq = 0;
 
     private LinkedList<Frame> inFrames = new LinkedList<>();
-    private List<byte[]> inMessages = new LinkedList<>();
-    private List<Frame> outFrames = new LinkedList<>();
+    LinkedBlockingQueue<byte[]> inMessages = new LinkedBlockingQueue<>();
+    private LinkedList<Frame> outFrames = new LinkedList<>();
 
     private int framesAddedToQueue = 0;
     private Timer resendTimer = new Timer();
@@ -60,6 +64,14 @@ public class Connection {
         }
     }
 
+    public byte[] getMessage() {
+        try {
+            return inMessages.take();
+        } catch (InterruptedException e) {
+            return null;
+        }
+    }
+
     /**
      * Adds a SYN frame to the internal send queue, and returns immediately.
      * Frame will be physically sent when the connectionHost decides to do so.
@@ -91,7 +103,7 @@ public class Connection {
      * This method should only be called from the connectionHost.
      */
     public void send() {
-        if (!outFrames.isEmpty() && sendSeq == outFrames.get(0).seq) {
+        if (!outFrames.isEmpty() && sendSeq == outFrames.getFirst().seq) {
             Frame outFrame = outFrames.remove(0);
             System.out.printf("%-45s", System.currentTimeMillis() + " " + name + " sent: ");
             System.out.println(outFrame);
@@ -143,7 +155,7 @@ public class Connection {
 //        } else {
 //            if (inFrame.seq == receiveSeq) {
 //                if (!inFrame.syn && !inFrame.fin) {
-//                    inFrames.add(inFrame);
+//                    inFrames.addConnection(inFrame);
 //                }
 //                System.out.printf("%-45s", System.currentTimeMillis() + " " + name + " received: ");
 //                System.out.println(inFrame);
@@ -179,7 +191,11 @@ public class Connection {
                         System.arraycopy(frame.payload, 0, message, from, frame.payload.length);
                         from += frame.payload.length;
                     }
-                    inMessages.add(message);
+                    try {
+                        inMessages.put(message);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
                     inFrames.clear();
                 }
             }
