@@ -11,8 +11,8 @@ import java.util.concurrent.LinkedBlockingQueue;
  * @author Oliver on 3/11/2018
  */
 public class Connection {
-    private static final int MAX_FRAME_SIZE = 256;  // bytes
-    private static final long RESEND_TIMEOUT = 700;  // milliseconds
+    private static final int MAX_FRAME_SIZE = 512;  // bytes
+    private static final long RESEND_TIMEOUT = 1000;  // milliseconds
 
     final Address source;
     final Address dest;
@@ -115,6 +115,7 @@ public class Connection {
                     if (connectionHost.isSending()) {
                         // If the ConnectionHost is already busy, sending a frame will cause
                         // future TimerTasks to be piled up into a queue.
+                        // TODO: This isSending rarely returns true even when it should
                         return;
                     }
                     if (outFrame.seq == sendSeq) {

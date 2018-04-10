@@ -104,7 +104,7 @@ class RealTimeFrameIO implements FrameIO {
         }
         lineCodec.encodeBytes(frameBytes.array());
         lineCodec.encodeBytes(new byte[]{0, 0});
-        for (int i = 0; i < 256; i++) {
+        for (int i = 0; i < 64; i++) {
             audioIO.writeSample((byte) 0);
         }
     }

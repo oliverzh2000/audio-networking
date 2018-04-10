@@ -62,7 +62,7 @@ public class Frame {
         } else {
             header += "   |";
         }
-        return header + "  payload: " + payload.length + " bytes";
+        return header + "  payload: " + payload.length + " bytes. " + new String(payload).replaceAll("\r\n|\n", "");
     }
 }
 

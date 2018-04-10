@@ -26,11 +26,6 @@ public class ConnectionHost {
     private Thread receiver = new Thread(() -> {
         while (true) {
             receive();
-            try {
-                Thread.sleep(50);
-            } catch (InterruptedException e) {
-                return;
-            }
         }
     });
     private Thread sender = new Thread(() -> {
@@ -39,7 +34,7 @@ public class ConnectionHost {
                 connection.send();
             }
             try {
-                Thread.sleep(50);
+                Thread.sleep(20);
             } catch (InterruptedException e) {
                 return;
             }
@@ -99,7 +94,7 @@ public class ConnectionHost {
 
         cm.addConnection(client);
         cm.addConnection(c2);
-//        while (!cm.ping((byte) 55, 5, 100, 500)) ;
+        while (!cm.ping((byte) 55, 5, 100, 500)) ;
         Random random = new Random();
         byte[] data = new byte[30];
         random.nextBytes(data);
