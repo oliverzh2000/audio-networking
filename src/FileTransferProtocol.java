@@ -22,12 +22,12 @@ public class FileTransferProtocol {
         audioIO.start();
         LineCodec lineCodec = new ManchesterCodec(8, audioIO);
         FrameIO frameIO = new RealTimeFrameIO(lineCodec);
-        ConnectionHost cm = new ConnectionHost((byte) 55, frameIO);
-        Connection server = new Connection(cm, (byte) 20, new Address(55, 10), "server");
-        Connection client = new Connection(cm, (byte) 10, new Address(55, 20), "client");
-        cm.startParallelIO();
-        cm.addConnection(server);
-        cm.addConnection(client);
+        ConnectionHost host = new ConnectionHost((byte) 55, frameIO);
+        Connection server = new Connection(host, (byte) 20, new Address(55, 10), "server");
+        Connection client = new Connection(host, (byte) 10, new Address(55, 20), "client");
+        host.startParallelIO();
+        host.addConnection(server);
+        host.addConnection(client);
 
         FileTransferProtocol ftpServer = new FileTransferProtocol(server,
                 "C:\\Users\\Oliver\\IdeaProjects\\Audio Networking\\FileTransfers\\server");
@@ -36,9 +36,7 @@ public class FileTransferProtocol {
         ftpClient.startParallelReceive();
         ftpServer.startParallelReceive();
 
-//        ftpClient.requestFile("folder1\\hello world.txt");
-//        ftpClient.requestFile("folder1\\Transmission Control Protocol.html");
-        ftpClient.requestDirectory("folder1");
+        ftpClient.requestDirectory("");
     }
 
     /**

@@ -11,7 +11,7 @@ import java.util.concurrent.LinkedBlockingQueue;
  * @author Oliver on 3/11/2018
  */
 public class Connection {
-    private static final int MAX_FRAME_SIZE = 512;  // bytes
+    private static final int MAX_FRAME_SIZE = 256;  // bytes
     private static final long RESEND_TIMEOUT = 1000;  // milliseconds
 
     final Address source;
