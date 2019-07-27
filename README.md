@@ -60,11 +60,12 @@ square waves in order to reduce their high-frequency component, since a there is
 high-frequency waveforms that are only a few samples wide. 
 
 The default bit duration is 8 samples. On computers with `44.1KHz` sample rate, this translates to a `44100/8 = 5512.5 bit/s` 
-maximum bitrate (still orders of magnitude less than the theoretical maximum bitrate on a 44.1KHz bandwidth, though). 
+maximum bitrate (still orders of magnitudes less than the theoretical maximum bitrate, though). 
 After accounting for the overhead of frames, and the inter-frame gaps, you can get ~`3Kbit/s`.
 
 Shorter bit durations give higher bitrates but unfortunately also increases audio distortion and the likelyhood of a bit-error in transmission. 
-Computers with higher-quality digital-to-analog and analog-to-digital converters may be able to handle shorter bit durations.
+Computers with higher-quality digital-to-analog and analog-to-digital converters may be able to handle shorter bit durations, while 
+still keeping error-rate acceptably low. 
 
 #### Decoding
 Because Manchester encoding ensures that each logical bit has a transition in it, the reciever can easily synchronize its clock and decode.
