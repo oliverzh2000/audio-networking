@@ -14,7 +14,7 @@ even usable at all).
 
 ## audio-networking Architecture (Bottom up)
 ### Audio I/O
-Real-time audio I/O is done using Java's `javax.sound.sampled` package. Audio format is 44100hz, 8-bit, mono, signed PCM, little-endian.
+Real-time audio I/O is done using Java's `javax.sound.sampled` package. Audio format is 44.1Khz, 8-bit, mono, signed PCM, little-endian.
 The `RealTimeAudioIO` and `WavFileIO` classes implement the `AudioIO` interface. For testing, the class `WavFileAudioIO` can be 
 used to read and write audio to `.wav` files.
 ## Line Encoding
@@ -89,8 +89,8 @@ and creates a convienient way to add error-checking functionality. The table bel
 +--------------+----------+-----+--------+------+-----+-----+-----+-----+-----+-----+----------+------------+----------+--------+-----------+-----------------+
 ```
 #### Preamble + Start of frame delimiter
-Before Line encoding, the preamble is a string 62 alternating `1` and `0`. The SoF delimiter is `11`.
-Transmitted from left to right, it looks like this:
+Before Line encoding, the preamble is a string 62 alternating `1` and `0`. The start-of-frame (SoF) delimiter is `11`.
+Transmitted from left to right, Preamble + SoF looks like this before line encoding:
 ```
 10101010 10101010 10101010 10101010 10101010 10101010 10101010 10101011
 ```
@@ -113,7 +113,9 @@ of connections are header-only.
 
 #### Checksums
 Both the header and the payload have 32-bit checksum fields (`head_chk` and `pay_chk`). 
-If either of these checksums are incorrect, the entire frame is discarded.
+If either of these checksums are incorrect, the entire frame is discarded. 
+Because the entire frame is discarded, it makes more sense to use smaller frames when probability of bit errors occuring in 
+transit are high.
 
 The `FrameIO` interface exposes blocking methods for sending and reciving frames. 
 
@@ -123,7 +125,8 @@ Each machine is able to set up as many instances of `Connection` as it wants to 
 on source and desination `Address`. 
 
 Connections expose a public interface to send and recieve messages. When a `message` is sent, it is automatically
-broken down and sent as multiple frames if nessecary. Messages are then pieced together from the frames that a `Connection` recieves.
+broken down and sent as multiple frames if nessecary. 
+Messages are then pieced together from the frames that a `Connection` recieves.
 This entire process is invisible to the end user of the `Connection`.
 
 #### Set Up
@@ -161,4 +164,4 @@ Of course, reliable delivery of messages is already guaranteed by `Connection`, 
    * Asynchronously: run independent connections in each channel.
    * Synchronously: alternate bits read/written from lineEncoder between 2 channels - effectively halves the length of each frame.
 2. Encrypted Connections
-
+3. Flow and congestion control to connect more than two machines together (will require additional hardware - i.e. n-channel audio mixer)
