@@ -53,7 +53,7 @@ It has 2 important properties:
 1. Continous runs of either `1` or `0` do not produce a steady-state analog signal, due to the guaranteed mid-bit transition. Since the sound cards of most modern computers are designed to
    filter out any direct current (DC) bias, this property is hugely important for `audio-networking`.
 2. Removes the need for an auxilliary channel to transmit the clock signal for synchronization between sender and reciever. 
-   This dramatically simplifies design, but it does come at the cost of effectively doubling bandwidth (can you see why?). 
+   This dramatically simplifies design, but it does come at the cost of effectively doubling the bandwidth requirement (can you see why?). 
 
 Although the table above depicts the Manchester encoded signal as square waves, in reality they are written to`AudioIO` as rounded
 square waves in order to reduce their high-frequency component, since a there is significant distortion that comes with writing and reading
